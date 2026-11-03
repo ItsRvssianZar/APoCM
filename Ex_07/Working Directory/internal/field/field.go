@@ -106,17 +106,17 @@ func (a T) Decompose(gamma2 uint32) (r1 int32, r0 int32) {
 	twoGamma2 := int32(gamma2 << 1)
 	gamma2Int := int32(gamma2)
 
-	r += q & (r >> 31)
+	// r += q & (r >> 31)
 
 	// Center r around 0 (map to range [-(q-1)/2, (q-1)/2])
-	mask := -((r - (q-1)/2 - 1) >> 31)
+	mask := (r - (q-1)/2 - 1) >> 31
 	r -= q & mask
 
 	// Compute r1 = round(r/alpha) with ties broken towards zero
 	// For r >= 0: r1 = (r + gamma2Int) / twoGamma2
 	// For r < 0:  r1 = (r - gamma2Int + 1) / twoGamma2
 	signMask := r >> 31
-	offset := gamma2Int + (signMask & (-gamma2Int + 1))
+	offset := gamma2Int + (signMask & (-twoGamma2 + 1))
 	r1 = (r + offset) / twoGamma2
 
 	// Compute r0 = r - r1*twoGamma2
@@ -127,12 +127,12 @@ func (a T) Decompose(gamma2 uint32) (r1 int32, r0 int32) {
 	// If r0 < -gamma2Int: r1--, r0 += twoGamma2
 
 	// Check if r0 > alpha/2
-	adjustUp := -((r0 - gamma2Int - 1) >> 31)
+	adjustUp := ((-r0 + gamma2Int) >> 31)
 	r1 += adjustUp & 1
 	r0 -= adjustUp & twoGamma2
 
 	// Check if r0 < -gamma2Int
-	adjustDown := -((-r0 - gamma2Int - 1) >> 31)
+	adjustDown := ((r0 + gamma2Int) >> 31)
 	r1 -= adjustDown & 1
 	r0 += adjustDown & twoGamma2
 

@@ -109,7 +109,7 @@ func (a T) Decompose(gamma2 uint32) (r1 int32, r0 int32) {
 	// r += q & (r >> 31)
 
 	// Center r around 0 (map to range [-(q-1)/2, (q-1)/2])
-	mask := (r - (q-1)/2 - 1) >> 31
+	mask := (-r + (q-1)/2) >> 31
 	r -= q & mask
 
 	// Compute r1 = round(r/alpha) with ties broken towards zero

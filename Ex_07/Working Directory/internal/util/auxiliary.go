@@ -239,13 +239,10 @@ func UseHint(cfg *params.Cfg, h []ring.R2, r []ring.Rq) []ring.Rz {
 			// r0 > 0
 			r0_greater := (-r0) >> 31
 
-			// r0 <= 0
-			r0_le := -1 + r0_greater
-
 			// if ℎ = 1 and 𝑟0 > 0 return (𝑟1 + 1) mod 𝑚
 			// if ℎ = 1 and 𝑟0 ≤ 0 return (𝑟1 − 1) mod �
 			c1 := h_mask & r0_greater
-			c2 := h_mask & r0_le
+			c2 := h_mask & (^r0_greater)
 
 			v[i][j] = (r1 + (1 & c1) + (-1 & c2))
 

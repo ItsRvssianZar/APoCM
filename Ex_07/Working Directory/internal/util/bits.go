@@ -190,8 +190,8 @@ func HintBitUnpack(k, omega uint8, y []byte) ([]ring.R2, error) {
 			index++
 		}
 	}
-	for i := index; i < omega; i++ {
-		if y[i] != 0 {
+	for j := index; j < omega; j++ {
+		if y[j] != 0 {
 			return nil, errors.New("malformed input")
 		}
 	}

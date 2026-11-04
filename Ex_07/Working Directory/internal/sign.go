@@ -37,13 +37,16 @@ func (sk *SigningKey) SignInternal(Mprime, rnd []byte) []byte {
 	tmp = append(tmp, mu...)
 	util.H(rhopp, tmp)
 
-	// Rejection sampling loop
-	// We do not use loop bounds:
-	// "Implementations *should* not bound the number of iterations in these loops..." (FIPS 204, Appendix C)
+	// Public rejection bounds.
+	gamma1_beta := (uint32(1) << cfg.LogGamma1) - uint32(cfg.Beta)
+	gamma2_beta := cfg.Gamma2 - uint32(cfg.Beta)
+
+	// Rejection sampling loop.
 	for kappa := uint16(0); ; kappa += uint16(cfg.L) {
 		y := ring.FromSymmetricVec(util.ExpandMask(cfg, rhopp, kappa))
 		w := util.InvNttVec(util.MatrixVectorNTT(Ahat, util.NttVec(y)))
 		w1_encoded := util.W1Encode(cfg, ring.HighBitsVec(w, cfg.Gamma2))
+
 		c_tilde := make([]byte, cfg.Lambda>>4)
 		util.H(c_tilde, append(mu, w1_encoded...))
 		c := util.SampleInBall(cfg, c_tilde)
@@ -53,25 +56,32 @@ func (sk *SigningKey) SignInternal(Mprime, rnd []byte) []byte {
 		cs2 := util.InvNttVec(util.ScalarVectorNTT(c_hat, s2hat))
 		z := util.AddVector(y, cs1)
 		r0 := ring.LowBitsVec(util.SubVector(w, cs2), cfg.Gamma2)
+
 		z_inf := ring.InfinityNormVec(z)
 		r0_inf := ring.InfinityNormVec(ring.FromSymmetricVec(r0))
 
-		// Rejection sampling
-		gamma1_beta := (1 << cfg.LogGamma1) - uint32(cfg.Beta)
-		gamma2_beta := cfg.Gamma2 - uint32(cfg.Beta)
+		// Each flag is 1 if the corresponding norm >= bound.
+		reject := uint32(1) ^ uint32(
+			(uint64(z_inf)-uint64(gamma1_beta))>>63,
+		)
+		reject |= uint32(1) ^ uint32(
+			(uint64(r0_inf)-uint64(gamma2_beta))>>63,
+		)
 
-		if z_inf >= gamma1_beta || r0_inf >= gamma2_beta {
-			continue
-		}
-
-		// <<ct0>> <- NTT^-1(c_hat o t0_hat)
+		// Compute ct0 and the hint on every attempt.
 		ct0 := util.InvNttVec(util.ScalarVectorNTT(c_hat, t0hat))
 		minus_ct0 := util.NegateVector(ct0)
 		w_cs2_ct0 := util.AddVector(util.SubVector(w, cs2), ct0)
 		ct0_inf := ring.InfinityNormVec(ct0)
-		// Returns `nil` if hint hamming weight is too large
+
+		// Returns nil if the hint's Hamming weight is too large.
 		h := util.MakeHint(cfg, minus_ct0, w_cs2_ct0)
-		if ct0_inf >= cfg.Gamma2 || h == nil {
+
+		reject |= uint32(1) ^ uint32(
+			(uint64(ct0_inf)-uint64(cfg.Gamma2))>>63,
+		)
+
+		if h == nil || reject != 0 {
 			continue
 		}
 
@@ -118,7 +128,15 @@ func (pk *VerifyingKey) VerifyInternal(Mprime, sigma []byte) bool {
 		return false
 	}
 
-	Azhat := util.MatrixVectorNTT(util.ExpandA(cfg, pk.rho[:]), util.NttVec(ring.FromSymmetricVec(z)))
+	// Check the decoded challenge length before indexing it.
+	if len(c_tilde) != int(cfg.Lambda>>2) {
+		return false
+	}
+
+	Azhat := util.MatrixVectorNTT(
+		util.ExpandA(cfg, pk.rho[:]),
+		util.NttVec(ring.FromSymmetricVec(z)),
+	)
 
 	tr := make([]byte, 64)
 	util.H(tr, pk.Bytes())
@@ -127,33 +145,41 @@ func (pk *VerifyingKey) VerifyInternal(Mprime, sigma []byte) bool {
 	util.H(mu, append(tr, Mprime...))
 
 	c := util.SampleInBall(cfg, c_tilde)
-
 	c_hat := util.NTT(ring.FromSymmetric(c))
 
-	t1_2d := util.ScalarVector(field.NewFromReduced(1<<params.D), pk.t1)
+	t1_2d := util.ScalarVector(
+		field.NewFromReduced(1<<params.D),
+		pk.t1,
+	)
 
 	t1_2d_hat := util.NttVec(t1_2d)
 	ct1_2d_hat := util.ScalarVectorNTT(c_hat, t1_2d_hat)
-	w_approx := util.InvNttVec(util.SubVectorNTT(Azhat, ct1_2d_hat))
+	w_approx := util.InvNttVec(
+		util.SubVectorNTT(Azhat, ct1_2d_hat),
+	)
 
-	w1_encoded := util.W1Encode(cfg, util.UseHint(cfg, h, w_approx))
+	w1_encoded := util.W1Encode(
+		cfg,
+		util.UseHint(cfg, h, w_approx),
+	)
+
 	c_tilde_prime := make([]byte, cfg.Lambda>>2)
 	util.H(c_tilde_prime, append(mu, w1_encoded...))
 
-	// Seems better to just do this directly on the Rz vec.
 	z_inf := ring.InfinityNormVec(ring.FromSymmetricVec(z))
+	bound := (uint32(1) << cfg.LogGamma1) - uint32(cfg.Beta)
 
-	bound := (1 << cfg.LogGamma1) - uint32(cfg.Beta)
+	// 1 if z_inf >= bound, 0 otherwise.
+	reject := uint32(1) ^ uint32(
+		(uint64(z_inf)-uint64(bound))>>63,
+	)
 
-	if z_inf > bound {
-		return false
+	// Examine every byte, without returning at the first mismatch.
+	for i := range c_tilde {
+		reject |= uint32(c_tilde[i] ^ c_tilde_prime[i])
 	}
-	for i := range len(c_tilde) {
-		if c_tilde[i] != c_tilde_prime[i] {
-			return false
-		}
-	}
-	return true
+
+	return reject == 0
 }
 
 // Verify verifies a signature.

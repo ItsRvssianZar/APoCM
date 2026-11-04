@@ -223,14 +223,6 @@ func UseHint(cfg *params.Cfg, h []ring.R2, r []ring.Rq) []ring.Rz {
 		for j := range params.N {
 			r1, r0 := r[i][j].Decompose(cfg.Gamma2)
 
-			/*if h[i][j] == 1 {
-				if r0 <= 0 {
-					v[i][j] = (r1 + m - 1) % m
-				} else {
-					v[i][j] = (r1 + 1) % m
-				}
-			}*/
-
 			// h[i][j]==1
 			h_mask_ge := (int32(-h[i][j])) >> 31
 			h_mask_le := (-2 + int32(h[i][j])) >> 31
@@ -239,8 +231,8 @@ func UseHint(cfg *params.Cfg, h []ring.R2, r []ring.Rq) []ring.Rz {
 			// r0 > 0
 			r0_greater := (-r0) >> 31
 
-			// if ℎ = 1 and 𝑟0 > 0 return (𝑟1 + 1) mod 𝑚
-			// if ℎ = 1 and 𝑟0 ≤ 0 return (𝑟1 − 1) mod �
+			// if ℎ = 1 and 𝑟0 > 0 return (𝑟1 + 1) mod m
+			// if ℎ = 1 and 𝑟0 ≤ 0 return (𝑟1 − 1) mod m
 			c1 := h_mask & r0_greater
 			c2 := h_mask & (^r0_greater)
 

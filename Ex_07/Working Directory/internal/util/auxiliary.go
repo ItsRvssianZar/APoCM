@@ -223,6 +223,7 @@ func UseHint(cfg *params.Cfg, h []ring.R2, r []ring.Rq) []ring.Rz {
 		for j := range params.N {
 			r1, r0 := r[i][j].Decompose(cfg.Gamma2)
 
+			//BUG: the previous version was vulnerable to timing based side channel attacks
 			// h[i][j]==1
 			h_mask_ge := (int32(-h[i][j])) >> 31
 			h_mask_le := (-2 + int32(h[i][j])) >> 31

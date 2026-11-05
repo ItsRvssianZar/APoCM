@@ -88,6 +88,7 @@ func (a T) Mul(b T) T {
 func (a T) Power2Round() (int32, int32) {
 	r0 := int32(a.reduced) & ((1 << d) - 1)
 
+	//BUG: the previous version was vulnerable to timing based side channel attacks
 	mask := (int32(1<<(d-1)) - r0) >> 31
 	r0 -= (int32(1) << d) & mask
 

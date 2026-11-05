@@ -37,6 +37,7 @@ func bitPack[T int32 | uint32](w []T, k uint8) []byte {
 		j := k // number of bits left to store in the current value
 
 		for l <= j {
+			//BUG: the bitwise & would operate with a z[m] initialized to 0, therefore outputs always 0
 			z[m] |= byte(v << (8 - l)) // bytes fill from the lsb to the msb
 			v >>= l
 			j -= l
@@ -49,6 +50,7 @@ func bitPack[T int32 | uint32](w []T, k uint8) []byte {
 		}
 
 		// Store the remaining bits in the current byte
+		//BUG: the bitwise & would operate with a z[m] initialized to 0, therefore outputs always 0
 		z[m] |= byte(v << (8 - l))
 		l -= j
 	}
@@ -190,6 +192,7 @@ func HintBitUnpack(k, omega uint8, y []byte) ([]ring.R2, error) {
 			index++
 		}
 	}
+	//BUG: missing lines 16 to 19 of pseudocode
 	for j := index; j < omega; j++ {
 		if y[j] != 0 {
 			return nil, errors.New("malformed input")

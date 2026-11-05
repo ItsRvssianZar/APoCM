@@ -145,7 +145,8 @@ func (sk SigningKey) EncodeExpanded() []byte {
 		encoded = append(encoded, packed[:]...)
 	}
 	for i := range sk.cfg.K {
-		packed := util.BitPack(sk.t0[i].Symmetric(), params.D)
+		//BUG: -1 was missing
+		packed := util.BitPack(sk.t0[i].Symmetric(), params.D-1)
 		encoded = append(encoded, packed[:]...)
 	}
 	return encoded

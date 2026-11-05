@@ -107,6 +107,7 @@ func (a T) Decompose(gamma2 uint32) (r1 int32, r0 int32) {
 	twoGamma2 := int32(gamma2 << 1)
 	gamma2Int := int32(gamma2)
 
+	//BUG: following line is useless cause a.Reduced() output r in [0, q-1]
 	// r += q & (r >> 31)
 
 	// Center r around 0 (map to range [-(q-1)/2, (q-1)/2])
@@ -117,6 +118,7 @@ func (a T) Decompose(gamma2 uint32) (r1 int32, r0 int32) {
 	// For r >= 0: r1 = (r + gamma2Int) / twoGamma2
 	// For r < 0:  r1 = (r - gamma2Int + 1) / twoGamma2
 	signMask := r >> 31
+	//BUG: the original offset was wrongly calculated cause for signMask == [1...1] the offset was equal to 1 instead of -gamma2Int + 1 as expected
 	offset := gamma2Int + (signMask & (-twoGamma2 + 1))
 	r1 = (r + offset) / twoGamma2
 

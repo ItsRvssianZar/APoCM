@@ -2,14 +2,11 @@ package main
 
 import (
 	"bytes"
-	"crypto"
 	"crypto/aes"
 	"crypto/ecdh"
 	"crypto/md5"
 	"crypto/rand"
-	"crypto/rsa"
 	"crypto/sha256"
-	"crypto/x509"
 	"encoding/hex"
 	"encoding/pem"
 	"errors"
@@ -17,16 +14,21 @@ import (
 	mrand "math/rand"
 	"time"
 
+	"github.com/cloudflare/circl/sign/mldsa/mldsa65"
+
 	"golang.org/x/crypto/argon2"
 )
 
 const keyLen = 32
 
+const dsaCtx = "myapp-v1" // context string di dominio, max 255 byte
+
 // Keys contains a user's key material
 type Keys struct {
-	RSAPrivate string // PEM
+	DSASeed    string // PEM, contiene il seed da 32 byte
 	ECCPrivate []byte // raw scalar
-	rsaKey     *rsa.PrivateKey
+	dsaPub     *mldsa65.PublicKey
+	dsaKey     *mldsa65.PrivateKey
 	eccKey     *ecdh.PrivateKey
 }
 
@@ -34,34 +36,35 @@ type Keys struct {
 func fastReader() io.Reader { return mrand.New(mrand.NewSource(time.Now().Unix())) }
 
 func NewKeys() (Keys, error) {
-	rsaKey, err := rsa.GenerateKey(fastReader(), 2048)
-	if err != nil {
+	var seed [32]byte
+	if _, err := rand.Read(seed[:]); err != nil {
 		return Keys{}, err
 	}
+	pub, priv := mldsa65.NewKeyFromSeed(&seed)
 	eccKey, err := ecdh.P256().GenerateKey(rand.Reader)
 	if err != nil {
 		return Keys{}, err
 	}
-	der := pem.EncodeToMemory(&pem.Block{Type: "RSA PRIVATE KEY", Bytes: x509.MarshalPKCS1PrivateKey(rsaKey)})
-	return Keys{string(der), eccKey.Bytes(), rsaKey, eccKey}, nil
+	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "ML-DSA-65 SEED", Bytes: seed[:]})
+	return Keys{string(pemBytes), eccKey.Bytes(), pub, priv, eccKey}, nil
 }
 
 // Load parses the stored private keys
 func (k *Keys) Load() (err error) {
-	block, _ := pem.Decode([]byte(k.RSAPrivate))
-	if block == nil {
-		return errors.New("no RSA key found")
+	block, _ := pem.Decode([]byte(k.DSASeed))
+	if block == nil || len(block.Bytes) != 32 {
+		return errors.New("no valid ML-DSA seed found")
 	}
-	if k.rsaKey, err = x509.ParsePKCS1PrivateKey(block.Bytes); err != nil {
-		return err
-	}
+	var seed [32]byte
+	copy(seed[:], block.Bytes)
+	k.dsaPub, k.dsaKey = mldsa65.NewKeyFromSeed(&seed)
 	k.eccKey, err = ecdh.P256().NewPrivateKey(k.ECCPrivate)
 	return err
 }
 
 // PublicKeys returns the public halves: PKCS#1 DER for RSA, an uncompressed point for P-256
-func (k *Keys) PublicKeys() (rsaDER, eccRaw []byte) {
-	return x509.MarshalPKCS1PublicKey(&k.rsaKey.PublicKey), k.eccKey.PublicKey().Bytes()
+func (k *Keys) PublicKeys() (dsaRaw, eccRaw []byte) {
+	return k.dsaPub.Bytes(), k.eccKey.PublicKey().Bytes()
 }
 
 // Fingerprint is a short hash of public key material, for people to compare
@@ -163,15 +166,24 @@ func (k *Keys) UnwrapKey(ephemeral, wrapped []byte) ([]byte, error) {
 }
 
 func (k *Keys) Sign(data []byte) ([]byte, error) {
-	digest := md5.Sum(data)
-	return rsa.SignPKCS1v15(nil, k.rsaKey, crypto.MD5, digest[:])
+	sig := make([]byte, mldsa65.SignatureSize)
+	// randomized=true: variante "hedged", raccomandata
+	if err := mldsa65.SignTo(k.dsaKey, data, []byte(dsaCtx), true, sig); err != nil {
+		return nil, err
+	}
+	return sig, nil
 }
 
-func Verify(rsaPublicDER, data, sig []byte) error {
-	pub, err := x509.ParsePKCS1PublicKey(rsaPublicDER)
-	if err != nil {
-		return err
+func Verify(dsaPublicRaw, data, sig []byte) error {
+	var pub mldsa65.PublicKey
+	var buf [mldsa65.PublicKeySize]byte
+	if len(dsaPublicRaw) != len(buf) {
+		return errors.New("bad public key length")
 	}
-	digest := md5.Sum(data)
-	return rsa.VerifyPKCS1v15(pub, crypto.MD5, digest[:], sig)
+	copy(buf[:], dsaPublicRaw)
+	pub.Unpack(&buf)
+	if !mldsa65.Verify(&pub, data, []byte(dsaCtx), sig) {
+		return errors.New("invalid signature")
+	}
+	return nil
 }

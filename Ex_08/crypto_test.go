@@ -3,8 +3,11 @@ package main
 import (
 	"bytes"
 	"crypto/rand"
+	"encoding/pem"
 	"sync"
 	"testing"
+
+	"github.com/cloudflare/circl/sign/mldsa/mldsa65"
 )
 
 var (
@@ -125,23 +128,33 @@ func TestFingerprint(t *testing.T) {
 
 func TestKeysSurviveStoringAndLoading(t *testing.T) {
 	alice, _ := testKeys(t)
-	loaded := Keys{RSAPrivate: alice.RSAPrivate, ECCPrivate: alice.ECCPrivate}
+	loaded := Keys{DSASeed: alice.DSASeed, ECCPrivate: alice.ECCPrivate}
 	if err := loaded.Load(); err != nil {
 		t.Fatal(err)
 	}
-	r1, e1 := alice.PublicKeys()
-	r2, e2 := loaded.PublicKeys()
-	if !bytes.Equal(r1, r2) || !bytes.Equal(e1, e2) {
+	d1, e1 := alice.PublicKeys()
+	d2, e2 := loaded.PublicKeys()
+	if !bytes.Equal(d1, d2) || !bytes.Equal(e1, e2) {
 		t.Error("loaded keys differ from the originals")
+	}
+	// il seed deve bastare a ricostruire una chiave che firma in modo verificabile
+	sig, err := loaded.Sign([]byte("x"))
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := Verify(d1, []byte("x"), sig); err != nil {
+		t.Errorf("signature from reloaded key rejected: %v", err)
 	}
 }
 
 func TestLoadRejectsBrokenKeys(t *testing.T) {
 	alice, _ := testKeys(t)
+	shortSeed := string(pem.EncodeToMemory(&pem.Block{Type: "ML-DSA-65 SEED", Bytes: make([]byte, 16)}))
 	for name, k := range map[string]Keys{
-		"empty":   {},
-		"not pem": {RSAPrivate: "hello", ECCPrivate: alice.ECCPrivate},
-		"bad ecc": {RSAPrivate: alice.RSAPrivate, ECCPrivate: []byte{1, 2, 3}},
+		"empty":      {},
+		"not pem":    {DSASeed: "hello", ECCPrivate: alice.ECCPrivate},
+		"short seed": {DSASeed: shortSeed, ECCPrivate: alice.ECCPrivate},
+		"bad ecc":    {DSASeed: alice.DSASeed, ECCPrivate: []byte{1, 2, 3}},
 	} {
 		if err := k.Load(); err == nil {
 			t.Errorf("%s: expected an error", name)
@@ -173,6 +186,16 @@ func TestSignVerify(t *testing.T) {
 	}
 	if Verify([]byte("junk"), data, sig) == nil {
 		t.Error("malformed public key accepted")
+	}
+	if Verify(make([]byte, 1952), data, sig) == nil {
+		t.Error("all-zero public key accepted")
+	}
+	sig2, _ := alice.Sign(data)
+	if bytes.Equal(sig, sig2) {
+		t.Error("signatures are deterministic, expected hedged signing")
+	}
+	if len(sig) != mldsa65.SignatureSize {
+		t.Errorf("signature size %d, want %d", len(sig), mldsa65.SignatureSize)
 	}
 }
 

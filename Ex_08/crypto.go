@@ -22,8 +22,8 @@ const keyLen = 32
 
 // Keys contains a user's key material
 type Keys struct {
-	DSASeed   string // PEM, contiene il seed da 32 byte
-	MLKEMSeed string
+	DSASeed   string // PEM; contains the 32-byte seed
+	MLKEMSeed string // PEM; contains the 64-byte seed
 	dsaPub    *mldsa65.PublicKey
 	dsaKey    *mldsa65.PrivateKey
 	mlkemKey  *mlkem.DecapsulationKey1024
@@ -32,6 +32,9 @@ type Keys struct {
 // fastReader is a time-seeded byte stream used for key and salt generation
 func fastReader() io.Reader { return mrand.New(mrand.NewSource(time.Now().Unix())) }
 
+// CBOMs: Yes
+// FIXES: RSA-2048 was marked as non post-quantum safe by both the cdxgen and the cbomkit-hyperion tools.
+// We substituted this cryptographic primitive with ML-DSA65, which is considered to be post-quantum secure.
 func NewKeys() (Keys, error) {
 	var seed [32]byte
 	if _, err := rand.Read(seed[:]); err != nil {

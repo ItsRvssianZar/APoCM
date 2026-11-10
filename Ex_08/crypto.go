@@ -71,7 +71,7 @@ func (k *Keys) Load() (err error) {
 
 // PublicKeys returns the public halves: PKCS#1 DER for RSA, an uncompressed point for P-256
 func (k *Keys) PublicKeys() (dsaRaw, eccRaw []byte) {
-	return k.dsaPub.Bytes(), k.eccKey.PublicKey().Bytes()
+	return k.dsaPub.Bytes(), k.mlkemKey.EncapsulationKey().Bytes()
 }
 
 // Fingerprint is a short hash of public key material, for people to compare

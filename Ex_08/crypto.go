@@ -67,7 +67,7 @@ func (k *Keys) Load() (err error) {
 }
 
 // PublicKeys returns the public halves: PKCS#1 DER for RSA, an uncompressed point for P-256
-func (k *Keys) PublicKeys() (dsaRaw, eccRaw []byte) {
+func (k *Keys) PublicKeys() (dsaRaw, mlkemRaw []byte) {
 	return k.dsaPub.Bytes(), k.mlkemKey.EncapsulationKey().Bytes()
 }
 
@@ -134,7 +134,7 @@ func Checksum(data []byte) string {
 
 // WrapKey encrypts a file key for the owner of recipientECC; ephemeral must travel with it
 func WrapKey(recipientKEM, fileKey []byte) (kemCiphertext, wrapped []byte, err error) {
-	pub, err := mlkem.NewEncapsulationKey768(recipientKEM)
+	pub, err := mlkem.NewEncapsulationKey1024(recipientKEM)
 	if err != nil {
 		return nil, nil, err
 	}

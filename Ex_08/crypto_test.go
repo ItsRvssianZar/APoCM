@@ -201,30 +201,30 @@ func TestSignVerify(t *testing.T) {
 
 func TestWrapUnwrapKey(t *testing.T) {
 	_, bob := testKeys(t)
-	_, bobECC := bob.PublicKeys()
+	_, bobMLKEM := bob.PublicKeys()
 	fileKey := randomBytes(t, keyLen)
 
-	eph, wrapped, err := WrapKey(bobECC, fileKey)
+	kemCtxt, wrapped, err := WrapKey(bobMLKEM, fileKey)
 	if err != nil {
 		t.Fatal(err)
 	}
-	got, err := bob.UnwrapKey(eph, wrapped)
+	got, err := bob.UnwrapKey(kemCtxt, wrapped)
 	if err != nil || !bytes.Equal(got, fileKey) {
 		t.Fatalf("unwrap failed: %v", err)
 	}
-	eph2, _, _ := WrapKey(bobECC, fileKey)
-	if bytes.Equal(eph, eph2) {
+	kemCtxtprime, _, _ := WrapKey(bobMLKEM, fileKey)
+	if bytes.Equal(kemCtxt, kemCtxtprime) {
 		t.Error("two wraps reused the same ephemeral key")
 	}
 }
 
 func TestUnwrapKeyFailsForOtherRecipient(t *testing.T) {
 	alice, bob := testKeys(t)
-	_, bobECC := bob.PublicKeys()
+	_, bobMLKEM := bob.PublicKeys()
 	fileKey := randomBytes(t, keyLen)
-	eph, wrapped, _ := WrapKey(bobECC, fileKey)
+	kemCiphertext, wrapped, _ := WrapKey(bobMLKEM, fileKey)
 
-	got, err := alice.UnwrapKey(eph, wrapped)
+	got, err := alice.UnwrapKey(kemCiphertext, wrapped)
 	if err == nil && bytes.Equal(got, fileKey) {
 		t.Error("another user unwrapped the file key")
 	}
@@ -236,6 +236,6 @@ func TestWrapKeyRejectsBadRecipientKey(t *testing.T) {
 	}
 	alice, _ := testKeys(t)
 	if _, err := alice.UnwrapKey([]byte("not a point"), make([]byte, 48)); err == nil {
-		t.Error("expected an error for a malformed ephemeral key")
+		t.Error("expected an error for a malformed ciphertext")
 	}
 }

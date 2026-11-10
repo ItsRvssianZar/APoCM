@@ -16,13 +16,7 @@ An algorithm appearing in a CBOM does not necessarily mean that the tool explici
 | MD5 | Lists `md5`, explicitly marked `weak` | Lists MD5 at checksum, signing and verification locations | Deprecated hash, replaced with SHA-256. The signature scheme was also replaced |
 | ECDH over P-256 | Not listed as a cryptographic asset | Not listed | Identified by reading the code; replaced with ML-KEM-1024 |
 | AES | Lists AES as `strong`, without identifying the mode | Lists AES, without identifying the mode | This remains unchanged |
-| Time-seeded `math/rand` | Metadata mentions `weak-randomness`, without a detailed finding identifying `fastReader` | Not listed | Removed from key generation, but still used for salts |
-| SHA-256 | Listed | Listed | Retained for fingerprints and shared-secret hashing, and introduced in place of MD5 |
-| Argon2id | Dependency/call evidence includes `argon2.IDKey`, but no separate Argon2 algorithm asset | Not listed | Retained with its existing parameters |
-
-Neither supplied JSON explicitly marks RSA as non-post-quantum. That is our assessment of the detected algorithm, so the corresponding comment in `NewKeys` overstates what the exported CBOMs themselves say.
-
-The inventories also require interpretation. Hyperion reports AES with `parameterSetIdentifier: "128"`, whereas the application derives 32-byte keys. This field should not be taken as proof that the application uses AES-128. cdxgen reports an X.509 certificate at a `MarshalPKCS1PrivateKey` call, although this operation serializes an RSA private key, not a certificate.
+| SHA-256 | Listed | Listed | Mantained and introduced in place of MD5 |
 
 ## 2. Implemented changes
 

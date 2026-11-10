@@ -25,10 +25,11 @@ const dsaCtx = "myapp-v1" // context string di dominio, max 255 byte
 
 // Keys contains a user's key material
 type Keys struct {
-	DSASeed  string // PEM, contiene il seed da 32 byte
-	dsaPub   *mldsa65.PublicKey
-	dsaKey   *mldsa65.PrivateKey
-	mlkemKey *mlkem.DecapsulationKey1024
+	DSASeed   string // PEM, contiene il seed da 32 byte
+	MLKEMSeed string
+	dsaPub    *mldsa65.PublicKey
+	dsaKey    *mldsa65.PrivateKey
+	mlkemKey  *mlkem.DecapsulationKey1024
 }
 
 // fastReader is a time-seeded byte stream used for key and salt generation
@@ -40,12 +41,17 @@ func NewKeys() (Keys, error) {
 		return Keys{}, err
 	}
 	pub, priv := mldsa65.NewKeyFromSeed(&seed)
-	mlkempriv, err := mlkem.GenerateKey1024()
+	var mlkemseed [64]byte
+	if _, err := rand.Read(mlkemseed[:]); err != nil {
+		return Keys{}, err
+	}
+	mlkempriv, err := mlkem.NewDecapsulationKey1024(mlkemseed[:])
 	if err != nil {
 		return Keys{}, err
 	}
 	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "ML-DSA-65 SEED", Bytes: seed[:]})
-	return Keys{string(pemBytes), pub, priv, mlkempriv}, nil
+	seedPem := pem.EncodeToMemory(&pem.Block{Type: "MLKEM SEED", Bytes: mlkemseed[:]})
+	return Keys{string(pemBytes), string(seedPem), pub, priv, mlkempriv}, nil
 }
 
 // Load parses the stored private keys
@@ -54,10 +60,12 @@ func (k *Keys) Load() (err error) {
 	if block == nil || len(block.Bytes) != 32 {
 		return errors.New("no valid ML-DSA seed found")
 	}
-	var seed [32]byte
-	copy(seed[:], block.Bytes)
-	k.dsaPub, k.dsaKey = mldsa65.NewKeyFromSeed(&seed)
-	k.eccKey, err = ecdh.P256().NewPrivateKey(k.ECCPrivate)
+	k.dsaPub, k.dsaKey = mldsa65.NewKeyFromSeed((*[32]byte)(block.Bytes))
+	block2, _ := pem.Decode([]byte(k.MLKEMSeed))
+	if block == nil || len(block2.Bytes) != 64 {
+		return errors.New("no valid MLKEM seed found")
+	}
+	k.mlkemKey, err = mlkem.NewDecapsulationKey1024(block2.Bytes)
 	return err
 }
 

@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/ecdh"
+	"crypto/mlkem"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -24,11 +25,10 @@ const dsaCtx = "myapp-v1" // context string di dominio, max 255 byte
 
 // Keys contains a user's key material
 type Keys struct {
-	DSASeed    string // PEM, contiene il seed da 32 byte
-	ECCPrivate []byte // raw scalar
-	dsaPub     *mldsa65.PublicKey
-	dsaKey     *mldsa65.PrivateKey
-	eccKey     *ecdh.PrivateKey
+	DSASeed  string // PEM, contiene il seed da 32 byte
+	dsaPub   *mldsa65.PublicKey
+	dsaKey   *mldsa65.PrivateKey
+	mlkemKey *mlkem.DecapsulationKey1024
 }
 
 // fastReader is a time-seeded byte stream used for key and salt generation
@@ -40,12 +40,12 @@ func NewKeys() (Keys, error) {
 		return Keys{}, err
 	}
 	pub, priv := mldsa65.NewKeyFromSeed(&seed)
-	eccKey, err := ecdh.P256().GenerateKey(rand.Reader)
+	mlkempriv, err := mlkem.GenerateKey1024()
 	if err != nil {
 		return Keys{}, err
 	}
 	pemBytes := pem.EncodeToMemory(&pem.Block{Type: "ML-DSA-65 SEED", Bytes: seed[:]})
-	return Keys{string(pemBytes), eccKey.Bytes(), pub, priv, eccKey}, nil
+	return Keys{string(pemBytes), pub, priv, mlkempriv}, nil
 }
 
 // Load parses the stored private keys

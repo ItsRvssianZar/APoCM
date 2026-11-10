@@ -59,7 +59,7 @@ func (k *Keys) Load() (err error) {
 	}
 	k.dsaPub, k.dsaKey = mldsa65.NewKeyFromSeed((*[32]byte)(block.Bytes))
 	block2, _ := pem.Decode([]byte(k.MLKEMSeed))
-	if block == nil || len(block2.Bytes) != 64 {
+	if block2 == nil || len(block2.Bytes) != 64 {
 		return errors.New("no valid MLKEM seed found")
 	}
 	k.mlkemKey, err = mlkem.NewDecapsulationKey1024(block2.Bytes)

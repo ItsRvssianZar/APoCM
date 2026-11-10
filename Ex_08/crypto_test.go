@@ -128,7 +128,7 @@ func TestFingerprint(t *testing.T) {
 
 func TestKeysSurviveStoringAndLoading(t *testing.T) {
 	alice, _ := testKeys(t)
-	loaded := Keys{DSASeed: alice.DSASeed, ECCPrivate: alice.ECCPrivate}
+	loaded := Keys{DSASeed: alice.DSASeed, MLKEMSeed: alice.MLKEMSeed}
 	if err := loaded.Load(); err != nil {
 		t.Fatal(err)
 	}
@@ -152,9 +152,9 @@ func TestLoadRejectsBrokenKeys(t *testing.T) {
 	shortSeed := string(pem.EncodeToMemory(&pem.Block{Type: "ML-DSA-65 SEED", Bytes: make([]byte, 16)}))
 	for name, k := range map[string]Keys{
 		"empty":      {},
-		"not pem":    {DSASeed: "hello", ECCPrivate: alice.ECCPrivate},
-		"short seed": {DSASeed: shortSeed, ECCPrivate: alice.ECCPrivate},
-		"bad ecc":    {DSASeed: alice.DSASeed, ECCPrivate: []byte{1, 2, 3}},
+		"not pem":    {DSASeed: "hello", MLKEMSeed: alice.MLKEMSeed},
+		"short seed": {DSASeed: shortSeed, MLKEMSeed: alice.MLKEMSeed},
+		"bad mlkem":  {DSASeed: alice.DSASeed, MLKEMSeed: "[]byte{1, 2, 3}"},
 	} {
 		if err := k.Load(); err == nil {
 			t.Errorf("%s: expected an error", name)

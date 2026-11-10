@@ -107,8 +107,8 @@ func TestNewSalt(t *testing.T) {
 
 func TestChecksum(t *testing.T) {
 	for in, want := range map[string]string{
-		"":    "d41d8cd98f00b204e9800998ecf8427e",
-		"abc": "900150983cd24fb0d6963f7d28e17f72",
+		"":    "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855",
+		"abc": "ba7816bf8f01cfea414140de5dae2223b00361a396177a9cb410ff61f20015ad",
 	} {
 		if got := Checksum([]byte(in)); got != want {
 			t.Errorf("Checksum(%q) = %s, want %s", in, got, want)

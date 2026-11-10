@@ -110,6 +110,25 @@ func blocks(key, data []byte, encrypt bool) ([]byte, error) {
 	return out, nil
 }
 
+// Ditemi cosa ne pensate di questa funzione, che implementa la cifratura in modalità CTR (Counter Mode) 
+// utilizzando AES. La funzione prende come input una chiave, un vettore di inizializzazione (IV) 
+// e i dati da cifrare o decifrare. Se l'IV non ha la lunghezza corretta, restituisce un errore. 
+func blocksCTR(key, iv, data []byte) ([]byte, error) {
+	block, err := aes.NewCipher(key)
+	if err != nil {
+		return nil, err
+	}
+	if len(iv) != aes.BlockSize {
+		return nil, errors.New("invalid IV length")
+	}
+
+	stream := cipher.NewCTR(block, iv)
+
+	out := make([]byte, len(data))
+	stream.XORKeyStream(out, data)
+	return out, nil
+}
+
 // Encrypt and Decrypt use PKCS#7 padding
 func Encrypt(key, plain []byte) ([]byte, error) {
 	pad := aes.BlockSize - len(plain)%aes.BlockSize

@@ -20,8 +20,6 @@ import (
 
 const keyLen = 32
 
-const dsaCtx = "myapp-v1" // context string di dominio, max 255 byte
-
 // Keys contains a user's key material
 type Keys struct {
 	DSASeed   string // PEM, contiene il seed da 32 byte
@@ -166,9 +164,9 @@ func (k *Keys) UnwrapKey(kemC, wrapped []byte) ([]byte, error) {
 }
 
 func (k *Keys) Sign(data []byte) ([]byte, error) {
+	digest := sha256.Sum256(data)
 	sig := make([]byte, mldsa65.SignatureSize)
-	// randomized=true: variante "hedged", raccomandata
-	if err := mldsa65.SignTo(k.dsaKey, data, []byte(dsaCtx), true, sig); err != nil {
+	if err := mldsa65.SignTo(k.dsaKey, digest[:], nil, true, sig); err != nil {
 		return nil, err
 	}
 	return sig, nil
@@ -182,7 +180,8 @@ func Verify(dsaPublicRaw, data, sig []byte) error {
 	}
 	copy(buf[:], dsaPublicRaw)
 	pub.Unpack(&buf)
-	if !mldsa65.Verify(&pub, data, []byte(dsaCtx), sig) {
+	digest := sha256.Sum256(data)
+	if !mldsa65.Verify(&pub, digest[:], nil, sig) {
 		return errors.New("invalid signature")
 	}
 	return nil

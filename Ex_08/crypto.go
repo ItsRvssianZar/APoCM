@@ -4,7 +4,6 @@ import (
 	"bytes"
 	"crypto/aes"
 	"crypto/ecdh"
-	"crypto/md5"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -124,7 +123,7 @@ func Decrypt(key, data []byte) ([]byte, error) {
 
 // Checksum is the integrity value stored next to encrypted data
 func Checksum(data []byte) string {
-	sum := md5.Sum(data)
+	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }
 

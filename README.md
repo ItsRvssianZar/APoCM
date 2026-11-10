@@ -1,1 +1,1 @@
-Usiamo questa repo per i vari homework/progetto :)
+Usiamo questa repo per i vari homework/progetto.

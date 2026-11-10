@@ -3,7 +3,6 @@ package main
 import (
 	"bytes"
 	"crypto/aes"
-	"crypto/ecdh"
 	"crypto/mlkem"
 	"crypto/rand"
 	"crypto/sha256"
@@ -135,41 +134,35 @@ func Checksum(data []byte) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// sharedKey derives the key-encryption key shared between priv and a peer's P-256 public key
-func sharedKey(priv *ecdh.PrivateKey, peer []byte) ([]byte, error) {
-	pub, err := ecdh.P256().NewPublicKey(peer)
-	if err != nil {
-		return nil, err
-	}
-	shared, err := priv.ECDH(pub)
-	sum := sha256.Sum256(shared)
-	return sum[:], err
-}
-
 // WrapKey encrypts a file key for the owner of recipientECC; ephemeral must travel with it
-func WrapKey(recipientECC, fileKey []byte) (ephemeral, wrapped []byte, err error) {
-	eph, err := ecdh.P256().GenerateKey(rand.Reader)
+func WrapKey(recipientKEM, fileKey []byte) (kemCiphertext, wrapped []byte, err error) {
+	pub, err := mlkem.NewEncapsulationKey768(recipientKEM)
 	if err != nil {
 		return nil, nil, err
 	}
-	kek, err := sharedKey(eph, recipientECC)
+	shared, kemCiphertext := pub.Encapsulate()
+	kek := sha256.Sum256(shared)
+	wrapped, err = Encrypt(kek[:], fileKey)
 	if err != nil {
 		return nil, nil, err
 	}
-	wrapped, err = Encrypt(kek, fileKey)
-	return eph.PublicKey().Bytes(), wrapped, err
+	return kemCiphertext, wrapped, nil
 }
 
-func (k *Keys) UnwrapKey(ephemeral, wrapped []byte) ([]byte, error) {
-	kek, err := sharedKey(k.eccKey, ephemeral)
+func (k *Keys) UnwrapKey(kemC, wrapped []byte) ([]byte, error) {
+	shared, err := k.mlkemKey.Decapsulate(kemC)
 	if err != nil {
 		return nil, err
 	}
-	key, err := Decrypt(kek, wrapped)
-	if err == nil && len(key) != keyLen {
-		err = errors.New("unexpected key length")
+	kek := sha256.Sum256(shared)
+	key, err := Decrypt(kek[:], wrapped)
+	if err != nil {
+		return nil, err
 	}
-	return key, err
+	if len(key) != keyLen {
+		return nil, errors.New("unexpected key length")
+	}
+	return key, nil
 }
 
 func (k *Keys) Sign(data []byte) ([]byte, error) {

@@ -54,7 +54,8 @@ func NewKeys() (Keys, error) {
 	return Keys{string(pemBytes), string(seedPem), pub, priv, mlkempriv}, nil
 }
 
-// Load parses the stored private keys
+// CBOMs: Yes (RSA); No (ECDH)
+// FIXES: we chose MLDSA65 over RSA cause it's quantum safe. Same applies for MLKEM over ECDH
 func (k *Keys) Load() (err error) {
 	block, _ := pem.Decode([]byte(k.DSASeed))
 	if block == nil || len(block.Bytes) != 32 {
@@ -69,7 +70,8 @@ func (k *Keys) Load() (err error) {
 	return err
 }
 
-// PublicKeys returns the public halves: PKCS#1 DER for RSA, an uncompressed point for P-256
+// CBOMs: Yes (RSA); No (ECDH)
+// FIXES: we chose MLDSA65 over RSA cause it's quantum safe. Same applies for MLKEM over ECDH
 func (k *Keys) PublicKeys() (dsaRaw, mlkemRaw []byte) {
 	return k.dsaPub.Bytes(), k.mlkemKey.EncapsulationKey().Bytes()
 }
@@ -129,13 +131,15 @@ func Decrypt(key, data []byte) ([]byte, error) {
 	return out[:len(out)-pad], nil
 }
 
-// Checksum is the integrity value stored next to encrypted data
+// CBOMs: Yes
+// FIXES: we chose SHA256 over MD5 cause MD5 is deprecated.
 func Checksum(data []byte) string {
 	sum := sha256.Sum256(data)
 	return hex.EncodeToString(sum[:])
 }
 
-// WrapKey encrypts a file key for the owner of recipientECC; ephemeral must travel with it
+// CBOMs: No
+// FIXES: we chose MLKEM over ECDH cause it's quantum safe
 func WrapKey(recipientKEM, fileKey []byte) (kemCiphertext, wrapped []byte, err error) {
 	pub, err := mlkem.NewEncapsulationKey1024(recipientKEM)
 	if err != nil {
@@ -150,6 +154,8 @@ func WrapKey(recipientKEM, fileKey []byte) (kemCiphertext, wrapped []byte, err e
 	return kemCiphertext, wrapped, nil
 }
 
+// CBOMs: No
+// FIXES: we chose MLKEM over ECDH cause it's quantum safe
 func (k *Keys) UnwrapKey(kemC, wrapped []byte) ([]byte, error) {
 	shared, err := k.mlkemKey.Decapsulate(kemC)
 	if err != nil {
@@ -166,6 +172,8 @@ func (k *Keys) UnwrapKey(kemC, wrapped []byte) ([]byte, error) {
 	return key, nil
 }
 
+// CBOMs: Yes
+// FIXES: we chose MLDSA65 over RSA cause it's quantum safe. We chose SHA256 over MD5 cause MD5 is deprecated.
 func (k *Keys) Sign(data []byte) ([]byte, error) {
 	digest := sha256.Sum256(data)
 	sig := make([]byte, mldsa65.SignatureSize)
@@ -175,6 +183,8 @@ func (k *Keys) Sign(data []byte) ([]byte, error) {
 	return sig, nil
 }
 
+// CBOMs: Yes
+// FIXES: we chose MLDSA65 over RSA cause it's quantum safe. We chose SHA256 over MD5 cause MD5 is deprecated.
 func Verify(dsaPublicRaw, data, sig []byte) error {
 	var pub mldsa65.PublicKey
 	var buf [mldsa65.PublicKeySize]byte

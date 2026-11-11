@@ -1,92 +1,56 @@
 # To Inventory and Beyond
 
-This repository contains the starting material for the exercise EX_08_01 "*To Inventory and Beyond*" of the APoCM course 2026/2027 at the University of Trento.
+Group members: Edoardo Barbieri 264679, Lorenzo Zarantonello 268174, Marco Battagliola 264454.
 
+This report describes the changes and fixes actually made in `crypto.go` and `crypto_test.go`, compared with the original ones.
 
+## 1. CBOM Analysis
 
-## Repository Contents
+We generated `cbom-cdxgen.json` and `cbom-cbomkit-hyperion.json` from the original project. They remain inventories of the **original implementation**, not of the fixed code. An algorithm appearing in a CBOM does not necessarily mean that the tool explicitly reports its vulnerability. We therefore distinguish asset detection from the security conclusions drawn during our analysis.
 
-*Scenario*: `vaultshare` is an interactive command-line tool for a small team that wants to keep files in a personal encrypted vault and prepare them for colleagues. On first use, each user gets an identity (a name plus a signing key pair and a key-agreement key pair) kept in the working directory, and can export a public identity file for others. Files added to the vault are encrypted under a key derived from a password chosen for each file, and a checksum is recorded alongside them. To share a file, the owner picks a vault entry and a recipient’s public identity file; the tool then writes a signed package for that recipient into the same directory (nothing is transmitted anywhere). The recipient opens the package with their own identity: the signature is checked, the file is recovered and its checksum verified, and the result is saved next to the program.
+| Asset | cdxgen | CBOMkit-hyperion | Results and fixes |
+| --- | --- | --- | --- |
+| RSA signing keys | Lists `rsa` and related key material | Lists `RSA-2048` | RSA is not post-quantum secure; replaced with ML-DSA-65 |
+| MD5 | Lists `md5`, explicitly marked `weak` | Lists MD5 at checksum, signing and verification locations | Deprecated hash, replaced with SHA-256. The signature scheme was also replaced |
+| ECDH over P-256 | Not listed as a cryptographic asset | Not listed | Identified by reading the code; replaced with ML-KEM-1024 |
+| AES | Lists AES as `strong`, without identifying the mode | Lists AES, without identifying the mode | This remains unchanged |
+| SHA-256 | Listed | Listed | Mantained and introduced in place of MD5 |
 
-| Path | Description |
-| --- | --- |
-| [`main.go`](main.go) | The application logic (no cryptography here) |
-| [`crypto.go`](crypto.go) | All cryptographic operations (key gen, enc/dec, signatures) |
-| [`main_test.go`](main_test.go) | Tests for the application logic |
-| [`crypto_test.go`](crypto_test.go) | Tests for the cryptographic operations |
-| [`Makefile`](Makefile) | Build, run, test, and cleanup targets |
-| [`go.mod`](go.mod) | Module definition and dependencies |
-| [`go.sum`](go.sum) | Dependency checksums |
+## 2. Detailed fixings
 
+### 2.1 RSA/MD5 signatures → ML-DSA-65 over a SHA-256 digest
 
+The original `Sign` and `Verify` used RSA PKCS#1 v1.5 with an MD5 digest. MD5 has broken collision resistance, and RSA does not provide post-quantum security.
 
-## Prerequisites
+`Sign` computes `SHA256(data)` and passes that digest to `mldsa65.SignTo`, with an empty context and randomized (hedged) signing enabled. `Verify` checks the public-key length, unpacks the key and verifies the signature over the same digest. Precisely, this is a **hash and sign** construction.
 
-- [Go 1.26+](https://go.dev/dl/)
-- [Docker](https://docs.docker.com/get-docker/) ([docker-compose-v2](https://stackoverflow.com/questions/66514436/difference-between-docker-compose-and-docker-compose))
-- [Git](https://git-scm.com/)
-- [Make](https://www.gnu.org/software/make/)
+### 2.2 ECDH P-256 → ML-KEM-1024
 
+The original wrapping operation generated an ephemeral P-256 key, performed ECDH with the recipient's public key, and hashed the shared secret with SHA-256 to obtain a key-encryption key. This ECDH usage was absent from both algorithm inventories and was identified manually. We replaced it with ML-KEM-1024 from Go's `crypto/mlkem` package:
 
+1. `NewKeys` generates a 64-byte random seed and constructs the recipient's decapsulation key.
+2. `WrapKey` parses the recipient's encapsulation key and calls `Encapsulate`, obtaining a shared secret and a KEM ciphertext.
+3. The shared secret is hashed with SHA-256, and the resulting 32-byte key is passed to `Encrypt` to wrap the file key.
+4. `UnwrapKey` decapsulates the KEM ciphertext, derives the same wrapping key and decrypts the wrapped file key. It rejects a recovered key whose length is not 32 bytes.
 
-## Setup
+The first output of `WrapKey` is therefore now a **KEM ciphertext**, rather than an ephemeral elliptic-curve public key. The symmetric encryption used inside this operation has not been changed.
 
-0. (optional but recommended) read the documentation of [cdxgen](https://cdxgen.github.io/cdxgen/#/), [CBOMkit](https://github.com/cbomkit/cbomkit), and [CBOMkit-hyperion](https://github.com/cbomkit/sonar-cryptography);
+### 2.3 MD5 checksum → SHA-256
 
-1. clone this repository and enter it;
+`Checksum` now returns the hexadecimal SHA-256 digest instead of MD5. Its output changes from 32 to 64 hexadecimal characters. Both CBOMs detected MD5; cdxgen additionally labelled it weak.
 
-2. download a [standalone cdxgen executable](https://github.com/cdxgen/cdxgen/releases) and make it executable with `chmod +x`. The name of the executable should start with `cdxgen-`, for example `cdxgen-linux-amd64`;
+### 2.4 Key storage and public-key encoding
 
-3. clone the [CBOMkit repository](https://github.com/cbomkit/cbomkit) and enter it;
+The `Keys` structure now stores `DSASeed` and `MLKEMSeed` as PEM-encoded seeds, replacing `RSAPrivate` and `ECCPrivate`. `Load` checks that the decoded seeds have lengths of 32 and 64 bytes respectively, then reconstructs the key objects. `PublicKeys` returns raw ML-DSA and ML-KEM public-key encodings.
 
-4. start CBOMkit by running `make production` (depending on your Docker version, you may need to replace `$(ENGINE)-compose` with `$(ENGINE) compose` in CBOMkit's Makefile);
+## 3. Test updates
 
-5. open [http://localhost:8001](http://localhost:8001) to access the CBOMkit web interface.
+We also modified `crypto_test.go` so that its expectations are consistent with the implemented changes:
 
+- Replaced the MD5 checksum vectors for the empty string and `abc` with SHA-256 vectors.
+- Updated storage/loading tests to use `DSASeed` and `MLKEMSeed`, compare reconstructed public keys and verify a signature produced by a reloaded key.
+- Updated invalid-key loading cases, including malformed PEM and an incorrectly sized ML-DSA seed.
+- Retained valid-signature, altered-message, corrupted-signature and wrong-signer checks, and added checks for signature length, verification failure under an all-zero public key and differing randomized signatures on the same message.
+- Adapted wrapping tests to ML-KEM public keys and ciphertexts, including round trips, distinct encapsulations, wrong-recipient behaviour and malformed inputs.
 
-
-## Objectives
-
-Once you completed the setup:
-
-1. generate two CBOMs on the Go project using `cdxgen` and `CBOMkit-hyperion` (via CBOMkit);
-2. investigate the CBOMs. You can graphically render them at [https://www.zurich.ibm.com/cbom/](https://www.zurich.ibm.com/cbom/) (the same viewer in CBOMkit) AND at [https://cbomcompliance.com/](https://cbomcompliance.com/);
-3. identify insecure, non-post-quantum, or badly configured cryptographic assets (for short, "bad assets"). Try to do it **only by looking at the CBOMs and not the Go code** (unless a CBOM contains the "Location" of bad assets);
-4. check whether you can identify additional bad assets (or other cryptographic smells) by manually analyzing the Go project (maybe, the CBOMs are not exhaustive). There is no need to update the CBOMs;
-5. think of alternatives to bad assets and smells, and apply suitable fixes to the Go project, **marking every modification to the Go code** with two comments:
-    ```go
-    // CBOMs: <yes/no, depending on whether this asset appeared in the CBOMs or you identified it manually>
-    // FIXES: <explanation of the problem(s) and the fix(es)>
-    ```
-
-
-
-## Deliverable
-
-Submit a **zip file** containing:
-
-- [ ] The CBOM generated by `cdxgen`;
-- [ ] The CBOM generated by `CBOMkit-hyperion`;
-- [ ] The `crypto.go` file where you fixed bad assets and smells.
-
-
-
-## Hints
-
-Feel free to read these hints:
-
-* compare the two CBOMs carefully: maybe not every asset is detected by both tools, and some may be missed entirely;
-
-* you can run `cdxgen` to produce its CBOM as:
-
-```bash
-# --deep: runs deeper source analysis. For Go, this enables the golem analyzer with data-flow analysis and performance guards
-# 
-# --evidence: runs the evidence/evinse analysis and attaches usage evidence to components
-# 
-# --include-crypto: includes cryptographic findings in the BOM, which is what produces "cryptographic-asset" components
-# 
-cdxgen-<executable_name> --deep --type go --evidence --include-crypto -o <cbom_file_name>.json <go_project_directory>
-```
-
-* you can run `CBOMkit-hyperion` (via CBOMkit) to produce its CBOM by going to `http://localhost:8001/` and adding the link of this repository in the text field under "Submit a new public Git repository to scan and generate a CBOM." and then clicking "Scan".
+All the other tests remain in place.
